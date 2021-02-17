@@ -30,9 +30,9 @@ class Net2_5D(nn.Module):
                
         
         
-        self.fc1 = nn.Linear(8*32*32, 8*16*16)
-        self.fc2 = nn.Linear( 8*16*16, 8*8*8)
-        self.fc3 = nn.Linear(8*8*8, 1)
+        self.fc1 = nn.Linear(8*16*16,  8*8*8)
+        self.fc2 = nn.Linear( 8*8*8, 8*4*4)
+        self.fc3 = nn.Linear(8*4*4, 1)
         
         
         """this is batch normalization, for 32 channels, implemented after 
@@ -80,8 +80,84 @@ class Net2_5D(nn.Module):
             x = F.relu(self.m8(self.conv4(x)))
             
             x = F.max_pool2d(x, (2,2)) 
-            print(x.shape)
-            x = x.view(-1, 8 * 32* 32)
+            
+            x = x.view(-1, 8 * 16* 16)
+            x = F.relu(self.fc1(x))
+            x = F.relu(self.fc2(x))
+            x = self.fc3(x)
+           
+
+        return x
+class Net_new(nn.Module):
+    
+    '''this is a new CNN model for 3d ct images'''
+    
+    def __init__(self):
+        super(Net_new, self).__init__()
+        self.conv0 = nn.Conv2d(256, 512, 5, padding = 2 )
+        self.conv1 = nn.Conv2d(512, 128, 5, padding=2)
+        
+        self.conv2 = nn.Conv2d(128,64, 5, padding=2)
+        
+        self.conv3 = nn.Conv2d(64, 32 , 5, padding=2)
+        
+        
+        
+        self.conv4 = nn.Conv2d(32, 16, 5, padding =2 )
+               
+        
+        
+        self.fc1 = nn.Linear(16*16*16, 8*8*8)
+        self.fc2 = nn.Linear(8*8*8,4*4*4)
+        self.fc3 = nn.Linear(4*4*4, 1)
+        self.dropout = nn.Dropout(0.25)
+        
+        """this is batch normalization, for 32 channels, implemented after 
+        convolutional layers but before Relu, except the last layer"""
+        self.m512 = nn.BatchNorm2d(512)
+        self.m128 = nn.BatchNorm2d(128)
+        self.m64 = nn.BatchNorm2d(64)
+        
+        self.m16 = nn.BatchNorm2d(16)
+        #self.m8 = nn.BatchNorm2d(8)
+        self.m32 = nn.BatchNorm2d(32)
+    def forward(self, x):
+        """Here we take the permutations of the dimensions of the input patch and pass through CNN layers"""
+        planes = []
+        
+# =============================================================================
+#         y = z = x
+#         
+#         y = y.permute(0, 2, 3, 1)
+#         z = z.permute(0, 3, 1, 2)
+#         planes.append(y)
+#         planes.append(z)
+#         
+# =============================================================================
+        planes.append(x)
+        
+        
+        '''this is a loop to implement the same cnn layers for the different planes of the 3d patch'''
+        for x in planes:
+            x = F.relu(self.m512(self.conv0(x)))
+            x = F.max_pool2d(x, (2,2))
+            x = self.dropout(x)
+            x = F.relu(self.m128(self.conv1(x)))
+            
+            
+            x = F.max_pool2d(x, (2,2))
+            x = self.dropout(x)
+            x = F.relu(self.m64(self.conv2(x)))
+            
+            
+            x = F.max_pool2d(x, (2,2))
+            x = self.dropout(x)
+            x = F.relu(self.m32(self.conv3(x))) 
+            x = self.dropout(x)
+            x = F.max_pool2d(x, (2,2)) 
+            x = F.relu(self.m16(self.conv4(x))) 
+            
+            x = x.view(-1, 16*16*16)
             x = F.relu(self.fc1(x))
             x = F.relu(self.fc2(x))
             x = self.fc3(x)
@@ -91,7 +167,7 @@ class Net2_5D(nn.Module):
 class CT_ages(Dataset):
     """Cardiac ctimages with ages dataset."""
 
-    def __init__(self, images_dir, labels_dir):
+    def __init__(self, images_dir, labels_dir,transform = None):
         """
         Args:
             labels= array that has the labels
@@ -101,9 +177,8 @@ class CT_ages(Dataset):
         self.images = sorted(os.listdir(images_dir))
         self.images_dir = images_dir
         self.labels_dir = labels_dir
-        self.transform = T.Compose([
-                T.ToTensor(),
-            ])
+        self.transform = transform
+        
 
     def __len__(self):
         return len(self.labels)
@@ -116,13 +191,14 @@ class CT_ages(Dataset):
         msk_path = self.labels_dir + '\\' + self.labels[idx]
         
         image = np.load(img_path)
-        print('image',image.shape)
+        
         label = np.load(msk_path)
-        print('label',label)
+        
         
         
         sample = {'image': image, 'label': label}
-
+        if self.transform:
+            sample['image'] = self.transform(torch.tensor(sample['image']))
         
         return sample
     
